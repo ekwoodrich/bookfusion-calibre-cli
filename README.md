@@ -1,6 +1,8 @@
 # BookFusion Calibre Plugin
 
-CLI:
+This fork adds a command-line interface to the official BookFusion Calibre plugin so scripts and scheduled jobs can upload either the whole library or selected books by Calibre ID. The original plugin exposed syncing only through its graphical interface, which made those operations difficult to automate. The CLI invokes the plugin's existing upload flow and saved settings, allowing automation to perform the same sync operations a user can start in Calibre.
+
+## CLI
 
 ``` shell
 calibre-debug -r "BookFusion Plugin CLI" -- sync-all
