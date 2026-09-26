@@ -1,0 +1,61 @@
+name: Build and release Calibre plugin
+
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cli-plugin-release-${{ github.ref }}
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out trunk and release tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate plugin and fork build versions
+        id: release
+        shell: bash
+        run: |
+          set -eu
+          canonical="$(python3 scripts/release_metadata.py version)"
+          suffix="$(python3 scripts/release_metadata.py next-suffix --commit "$GITHUB_SHA")"
+          compact="${canonical//./}"
+          tag="cli-${canonical}${suffix}"
+          asset="dist/BookFusion-cli-${compact}${suffix}.zip"
+          {
+            echo "canonical=${canonical}"
+            echo "suffix=${suffix}"
+            echo "tag=${tag}"
+            echo "asset=${asset}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build plugin archive
+        env:
+          CLI_BUILD_SUFFIX: ${{ steps.release.outputs.suffix }}
+        run: make dist
+
+      - name: Create or refresh GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANONICAL_VERSION: ${{ steps.release.outputs.canonical }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_ASSET: ${{ steps.release.outputs.asset }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$RELEASE_ASSET" --clobber
+          else
+            gh release create "$RELEASE_TAG" "$RELEASE_ASSET" \
+              --title "$RELEASE_TAG" \
+              --notes "Calibre plugin version ${CANONICAL_VERSION}; fork build ${RELEASE_TAG}." \
+              --target "$GITHUB_SHA"
+          fi

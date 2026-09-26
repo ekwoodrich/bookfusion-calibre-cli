@@ -26,4 +26,16 @@ Package:
 make dist
 ```
 
-(creates `dist/BookFusion.zip`)
+(creates `dist/BookFusion-cli-081a.zip` for plugin version `(0, 8, 1)` with the default `a` suffix). Set `CLI_BUILD_SUFFIX` to choose a different fork build letter:
+
+``` shell
+make dist CLI_BUILD_SUFFIX=b
+```
+
+The archive's canonical Calibre plugin version is read directly from `BookFusionPlugin.version` in `__init__.py`; packaging and release automation do not modify it.
+
+## GitHub releases
+
+Every push to `master` (including a merged PR) builds and publishes a GitHub release. The release tag and title use `cli-<canonical-version><suffix>`, for example `cli-0.8.2a`, while the archive uses the compact version, for example `BookFusion-cli-082a.zip`.
+
+The suffix starts at `a` for each canonical plugin version and advances through `b`, `c`, and so on based on existing release tags. If `__init__.py` changes to a new canonical version, the next release starts at suffix `a`; the plugin version itself remains exactly as specified in `__init__.py`.
