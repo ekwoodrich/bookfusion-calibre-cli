@@ -9,6 +9,7 @@ import json
 
 from calibre_plugins.bookfusion.config import prefs
 from calibre_plugins.bookfusion import api
+from calibre_plugins.bookfusion.path_utils import win_long_path
 
 
 class UploadWorker(QObject):
@@ -48,6 +49,7 @@ class UploadWorker(QObject):
 
         self.book_id = book_id
         self.file_path = file_path
+        self.native_file_path = win_long_path(file_path)
 
         self.check()
 
@@ -78,6 +80,7 @@ class UploadWorker(QObject):
         skip = False
         update = False
         result = None
+        fail_message = None
 
         error = self.reply.error()
         if error == QNetworkReply.NetworkError.AuthenticationRequiredError:
@@ -104,22 +107,36 @@ class UploadWorker(QObject):
             self.log_info('Upload check: InternalServerError')
             resp = self.reply.readAll()
             self.log_info('Upload check response: {}'.format(resp))
+            fail_message = 'Internal server error during upload check'
         elif error == QNetworkReply.NetworkError.UnknownServerError:
             self.log_info('Upload check: UnknownServerError')
             resp = self.reply.readAll()
             self.log_info('Upload check response: {}'.format(resp))
+            fail_message = 'Unknown server error during upload check'
+        elif error == QNetworkReply.NetworkError.ConnectionRefusedError or \
+             error == QNetworkReply.NetworkError.RemoteHostClosedError or \
+             error == QNetworkReply.NetworkError.HostNotFoundError or \
+             error == QNetworkReply.NetworkError.TimeoutError or \
+             error == QNetworkReply.NetworkError.TemporaryNetworkFailureError:
+            fail_message = 'Error {} during upload check'.format(error)
         elif error == QNetworkReply.NetworkError.OperationCanceledError:
-            abort = True
+            if self.canceled:
+                abort = True
+            else:
+                fail_message = 'Operation canceled during upload check'
             self.log_info('Upload check: OperationCanceledError')
         else:
-            abort = True
-            self.aborted.emit('Error {}.'.format(error))
             self.log_info('Upload check error: {}'.format(error))
+            fail_message = 'Error {} during upload check'.format(error)
 
         self.reply.deleteLater()
         self.reply = None
 
         if not abort:
+            if fail_message:
+                self.failed.emit(self.book_id, fail_message)
+                self.readyForNext.emit(self.index)
+                return
             if skip:
                 self.readyForNext.emit(self.index)
             else:
@@ -162,7 +179,7 @@ class UploadWorker(QObject):
             self.readyForNext.emit(self.index)
 
     def upload(self):
-        self.file = QFile(self.file_path)
+        self.file = QFile(self.native_file_path)
         self.file.open(QIODeviceBase.OpenModeFlag.ReadOnly)
 
         self.req = QNetworkRequest(QUrl(self.upload_url))
@@ -311,6 +328,7 @@ class UploadWorker(QObject):
 
         cover_path = self.db.cover(self.book_id, as_path=True)
         if cover_path:
+            cover_path = win_long_path(cover_path)
             h.update(bytes(path.getsize(cover_path)))
             h.update(b'\0')
             with open(cover_path, 'rb') as file:
@@ -359,7 +377,7 @@ class UploadWorker(QObject):
 
         cover_path = self.db.cover(self.book_id, as_path=True)
         if cover_path:
-            self.cover = QFile(cover_path)
+            self.cover = QFile(win_long_path(cover_path))
             self.cover.open(QIODeviceBase.OpenModeFlag.ReadOnly)
             self.req_body.append(self.build_req_part('metadata[cover]', self.cover))
         else:
@@ -390,6 +408,7 @@ class UploadWorker(QObject):
     def complete_req(self, tag, return_json = False):
         retry = False
         abort = False
+        fail_message = None
 
         if self.canceled:
             abort = True
@@ -415,17 +434,20 @@ class UploadWorker(QObject):
                 err_resp = self.reply.readAll()
                 self.log_info('{} response: {}'.format(tag, err_resp))
                 msg = json.loads(err_resp.data())['error']
-                self.failed.emit(self.book_id, msg)
+                fail_message = msg
             else:
                 self.log_info('{}: UnknownContentError'.format(tag))
+                fail_message = 'Unknown content error during {}'.format(tag.lower())
         elif error == QNetworkReply.NetworkError.InternalServerError:
             self.log_info('{}: InternalServerError'.format(tag))
             err_resp = self.reply.readAll()
             self.log_info('{} response: {}'.format(tag, err_resp))
+            fail_message = 'Internal server error during {}'.format(tag.lower())
         elif error == QNetworkReply.NetworkError.UnknownServerError:
             self.log_info('{}: UnknownServerError'.format(tag))
             err_resp = self.reply.readAll()
             self.log_info('{} response: {}'.format(tag, err_resp))
+            fail_message = 'Unknown server error during {}'.format(tag.lower())
         elif error == QNetworkReply.NetworkError.ConnectionRefusedError or \
              error == QNetworkReply.NetworkError.RemoteHostClosedError or \
              error == QNetworkReply.NetworkError.HostNotFoundError or \
@@ -434,12 +456,14 @@ class UploadWorker(QObject):
             retry = True
             self.log_info('{}: {}'.format(tag, error))
         elif error == QNetworkReply.NetworkError.OperationCanceledError:
-            abort = True
+            if self.canceled:
+                abort = True
+            else:
+                fail_message = 'Operation canceled during {}'.format(tag.lower())
             self.log_info('{}: OperationCanceledError'.format(tag))
         else:
-            abort = True
-            self.aborted.emit('Error {}.'.format(error))
             self.log_info('{} error: {}'.format(tag, error))
+            fail_message = 'Error {} during {}'.format(error, tag.lower())
 
         self.reply.deleteLater()
         self.reply = None
@@ -449,12 +473,15 @@ class UploadWorker(QObject):
 
             if self.retries > 2:
                 self.retries = 0
-                self.aborted.emit('Error {}.'.format(error))
+                fail_message = 'Error {} during {}'.format(error, tag.lower())
                 retry = False
             else:
                 abort = False
         else:
             self.retries = 0
+
+        if fail_message and not abort:
+            self.failed.emit(self.book_id, fail_message)
 
         return (resp, retry, abort)
 
@@ -463,9 +490,9 @@ class UploadWorker(QObject):
             return
 
         h = sha256()
-        h.update(bytes(path.getsize(self.file_path)))
+        h.update(bytes(path.getsize(self.native_file_path)))
         h.update(b'\0')
-        with open(self.file_path, 'rb') as file:
+        with open(self.native_file_path, 'rb') as file:
             block = file.read(65536)
             while len(block) > 0:
                 h.update(block)

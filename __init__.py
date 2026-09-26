@@ -1,11 +1,13 @@
 __copyright__ = '2018, BookFusion <legal@bookfusion.com>'
 __license__ = 'GPL v3'
 
+import sys
+
 from calibre.customize import InterfaceActionBase
 
 
 class BookFusionPlugin(InterfaceActionBase):
-    name = 'BookFusion Plugin'
+    name = 'BookFusion Plugin CLI'
     description = 'Provides synchronization of your eBooks and metadata from Calibre to your devices via the BookFusion iOS, Android & Web reader.'
     supported_platforms = ['windows', 'osx', 'linux']
     author = 'BookFusion'
@@ -27,3 +29,8 @@ class BookFusionPlugin(InterfaceActionBase):
         ac = self.actual_plugin_
         if ac is not None:
             ac.apply_settings()
+
+    def cli_main(self, args):
+        from calibre_plugins.bookfusion.cli_sync import run_cli
+
+        raise SystemExit(run_cli(args or [], stdout=sys.stdout, stderr=sys.stderr))

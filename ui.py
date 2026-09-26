@@ -8,7 +8,7 @@ from calibre_plugins.bookfusion.main import MainDialog
 
 
 class InterfacePlugin(InterfaceAction):
-    name = 'BookFusion Plugin'
+    name = 'BookFusion Plugin CLI'
 
     action_spec = ('BookFusion', None,
                    'Sync your books to the BookFusion platform', None)

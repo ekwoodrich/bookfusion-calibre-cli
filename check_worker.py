@@ -8,6 +8,7 @@ import json
 from calibre_plugins.bookfusion.config import prefs
 from calibre_plugins.bookfusion import api
 from calibre_plugins.bookfusion.book_format import BookFormat
+from calibre_plugins.bookfusion.path_utils import win_long_path
 
 
 class CheckWorker(QObject):
@@ -104,7 +105,7 @@ class CheckWorker(QObject):
             if book_format.file_path:
                 self.books_count += 1
 
-                if getsize(book_format.file_path) <= self.limits['filesize']:
+                if getsize(win_long_path(book_format.file_path)) <= self.limits['filesize']:
                     self.valid_ids.append(book_id)
                     self.logger.info('File ok: book_id={}'.format(book_id))
                 else:
